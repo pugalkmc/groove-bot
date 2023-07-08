@@ -21,7 +21,7 @@ firebase_admin.initialize_app(cred, {
     "databaseURL": "https://kit-pro-f4b0d-default-rtdb.firebaseio.com/"
 })
 
-BOT_TOKEN = "6109952194:AAGTHr5yMgtoiJE1aT9mIi23Nkfl69u6DP0"
+BOT_TOKEN = "6109952194:AAEVgv3Ua_qsamlJsopsDZrhqxMZS8F8uCY"
 bot = Bot(token=BOT_TOKEN)
 
 
