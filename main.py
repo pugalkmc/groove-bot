@@ -11,6 +11,7 @@ from asgiref.wsgi import WsgiToAsgi
 from telegram import Bot, Update
 from telegram.constants import ParseMode
 from chatbot import message_handler
+from admin_operations import settings_check, admin_only
 
 from uuid import uuid4
 from telegram.ext import (
@@ -89,7 +90,8 @@ async def start_web(update: Update, context: CustomContext) -> None:
     )
     await update.message.reply_html(text=text)
 
-
+@admin_only
+@settings_check
 async def bot_setup_command(update, context):
     chat_id = update.message.chat_id
     if context.args:
@@ -110,7 +112,8 @@ async def bot_setup_command(update, context):
             text="Please add register token next to the command"
         )
 
-
+@settings_check
+@admin_only
 async def bot_revoke_command(update, context):
     chat_id = update.message.chat_id
     if context.args:
