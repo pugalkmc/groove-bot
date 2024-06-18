@@ -1,3 +1,5 @@
+import os
+os.environ['USER_AGENT'] = 'pugal'
 import asyncio
 from dataclasses import dataclass
 import html
