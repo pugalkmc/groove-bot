@@ -6,15 +6,13 @@ import html
 from http import HTTPStatus
 import logging
 import traceback
-import uvicorn
-from fastapi import Response
+from fastapi import FastAPI, Response
 from flask import Flask, jsonify, make_response, request
 from asgiref.wsgi import WsgiToAsgi
 from telegram import Bot, Update
 from telegram.constants import ParseMode
 from chatbot import message_handler
 from admin_operations import settings_check, admin_only
-
 from uuid import uuid4
 from telegram.ext import (
     MessageHandler,
@@ -35,8 +33,6 @@ from telegram.error import BadRequest, NetworkError
 import admin_operations
 import greeting
 import config
-
-from database import *
 
 bot = Bot(config.BOT_TOKEN)
 
@@ -69,7 +65,6 @@ class CustomContext(CallbackContext[ExtBot, dict, dict, dict]):
         if isinstance(update, WebhookUpdate):
             return cls(application=application, user_id=update.user_id)
         return super().from_update(update, application)
-
 
 async def webhook_update(update: WebhookUpdate, context: CustomContext) -> None:
     """Handle custom updates."""
@@ -135,7 +130,6 @@ async def bot_revoke_command(update, context):
             text="Please add unregister token next to the command"
         )
 
-
 async def error(update, context):
     error_message = str(context.error)
     
@@ -191,54 +185,30 @@ async def main() -> None:
 
     @flask_app.post("/telegram")  # type: ignore[misc]
     async def telegram() -> Response:
-        """Handle incoming Telegram updates by putting them into the `update_queue`"""
-        await dp.update_queue.put(Update.de_json(data=request.json, bot=dp.bot))
-        return jsonify({"status": "OK"})
-    
-    @flask_app.route("/submitpayload", methods=["GET", "POST"])
-    async def custom_updates() -> Response:
-        """
-        Handle incoming webhook updates by putting them into the `update_queue` if
-        the required parameters were passed correctly.
-        """
+        """Handle incoming Telegram updates by putting them into the Dispatcher."""
         try:
-            user_id = int(request.args["user_id"])
-            payload = request.args["payload"]
-        except KeyError:
-            return jsonify({"error": "Please pass both `user_id` and `payload` as query parameters."}), HTTPStatus.BAD_REQUEST
-        except ValueError:
-            return jsonify({"error": "The `user_id` must be an integer."}), HTTPStatus.BAD_REQUEST
+            update = Update.de_json(request.get_json(force=True), bot)
+            await dp.process_update(update)
+        except Exception as e:
+            logger.error(f"Error processing update: {e}")
+            logger.error(traceback.format_exc())
+        return make_response(jsonify({"status": "ok"}), HTTPStatus.OK)
 
-        await dp.update_queue.put(WebhookUpdate(user_id=user_id, payload=payload))
-        return jsonify({"status": "OK"})
-    
-    @flask_app.get("/healthcheck")  # type: ignore[misc]
-    async def health() -> Response:
-        """For the health endpoint, reply with a simple plain text message."""
-        return make_response("The bot is still running fine :)", HTTPStatus.OK)
-    
-    @flask_app.post("/settings")  # type: ignore[misc]
-    async def change_settings() -> Response:
-        data = request.json
-        config.settings[data['groupId']] = data
-        return jsonify({"message": f"Settings updated"}), HTTPStatus.OK
+    app = FastAPI()
 
+    # Convert the Flask app to ASGI
+    asgi_app = WsgiToAsgi(flask_app)
+    app.mount("/", asgi_app)
 
-    webserver = uvicorn.Server(
-        config=uvicorn.Config(
-            app=WsgiToAsgi(flask_app),
-            port=os.getenv("PORT", default=8443),
-            use_colors=False,
-            host="0.0.0.0",
-        )
-    )
-
-    # Run application and webserver together
-    async with dp:
+    @app.on_event("startup")
+    async def startup():
         await dp.start()
-        await webserver.serve()
+
+    @app.on_event("shutdown")
+    async def shutdown():
         await dp.stop()
 
-# Run FastAPI app
+    return app  # Return the FastAPI app instance
+
 if __name__ == "__main__":
     asyncio.run(main())
