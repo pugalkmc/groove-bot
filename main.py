@@ -1,5 +1,6 @@
 import os
 os.environ['USER_AGENT'] = 'pugal'
+import os
 import asyncio
 from dataclasses import dataclass
 import html
@@ -17,12 +18,8 @@ from uuid import uuid4
 from telegram.ext import (
     MessageHandler,
     filters,
-    Application
-)
-from telegram.ext import (
+    Application,
     CommandHandler,
-    MessageHandler,
-    filters,
     CallbackContext,
     ContextTypes,
     ExtBot,
@@ -40,23 +37,17 @@ bot = Bot(config.BOT_TOKEN)
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class WebhookUpdate:
     """Simple dataclass to wrap a custom update type"""
-
     user_id: int
     payload: str
 
 class CustomContext(CallbackContext[ExtBot, dict, dict, dict]):
-    """
-    Custom CallbackContext class that makes `user_data` available for updates of type
-    `WebhookUpdate`.
-    """
-
     @classmethod
     def from_update(
         cls,
@@ -67,7 +58,6 @@ class CustomContext(CallbackContext[ExtBot, dict, dict, dict]):
         return super().from_update(update, application)
 
 async def webhook_update(update: WebhookUpdate, context: CustomContext) -> None:
-    """Handle custom updates."""
     chat_member = await context.bot.get_chat_member(chat_id=update.user_id, user_id=update.user_id)
     payloads = context.user_data.setdefault("payloads", [])
     payloads.append(update.payload)
@@ -79,7 +69,6 @@ async def webhook_update(update: WebhookUpdate, context: CustomContext) -> None:
     await update.message.reply_text(text=text, parse_mode=ParseMode.HTML)
 
 async def start_web(update: Update, context: CustomContext) -> None:
-    """Display a message with instructions on how to use this bot."""
     payload_url = html.escape(f"{config.URL}/submitpayload?user_id=<your user id>&payload=<payload>")
     text = (
         f"To check if the bot is still running, call <code>{config.URL}/healthcheck</code>.\n\n"
@@ -132,8 +121,6 @@ async def bot_revoke_command(update, context):
 
 async def error(update, context):
     error_message = str(context.error)
-    
-    # Example of handling BadRequest
     if isinstance(context.error, BadRequest):
         error_message = f"Telegram API returned BadRequest: {context.error.message}"
     elif isinstance(context.error, NetworkError):
@@ -144,23 +131,18 @@ async def error(update, context):
     logger.error(f"Update {update} caused error: {error_message}\n\n")
     print("Error details:", traceback.format_exc())
 
-    # Notify admin or log the error appropriately
     await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=error_message)
 
-async def main() -> None:
+async def create_app() -> FastAPI:
     await bot.initialize()
 
-    """Set up PTB application and a web application for handling the incoming requests."""
     context_types = ContextTypes(context=CustomContext)
-    # Here we set updater to None because we want our custom webhook server to handle the updates
-    # and hence we don't need an Updater instance
     dp = (
         Application.builder().token(config.BOT_TOKEN).updater(None).context_types(context_types).build()
     )
 
     await dp.initialize()
 
-    # Register handlers
     dp.add_handler(CommandHandler("kick", admin_operations.kick))
     dp.add_handler(CommandHandler("mute", admin_operations.mute))
     dp.add_handler(CommandHandler("unmute", admin_operations.unmute))
@@ -172,20 +154,16 @@ async def main() -> None:
     dp.add_handler(CommandHandler("unregister", bot_revoke_command))
     dp.add_handler(MessageHandler(filters.TEXT, message_handler))
     dp.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, greeting.new_member))
-
     dp.add_handler(MessageHandler(filters.COMMAND, admin_operations.handle_command_from_non_admin))
     dp.add_handler(TypeHandler(type=WebhookUpdate, callback=webhook_update))
     dp.add_error_handler(error)
 
-    # Pass webhook settings to telegram
     await dp.bot.set_webhook(url=f"{config.URL}/telegram", allowed_updates=Update.ALL_TYPES)
 
-    # Set up webserver
     flask_app = Flask(__name__)
 
-    @flask_app.post("/telegram")  # type: ignore[misc]
+    @flask_app.post("/telegram")
     async def telegram() -> Response:
-        """Handle incoming Telegram updates by putting them into the Dispatcher."""
         try:
             update = Update.de_json(request.get_json(force=True), bot)
             await dp.process_update(update)
@@ -196,25 +174,16 @@ async def main() -> None:
 
     app = FastAPI()
 
-    # Convert the Flask app to ASGI
     asgi_app = WsgiToAsgi(flask_app)
     app.mount("/", asgi_app)
-
-    # Health check endpoint
-    @app.get("/health")
-    async def health():
-        return {"status": "ok"}
 
     @app.on_event("startup")
     async def startup():
         await dp.start()
-        logger.info("Application startup complete")
+        logger.info("Application startup complete.")
 
     @app.on_event("shutdown")
     async def shutdown():
         await dp.stop()
 
-    return app  # Return the FastAPI app instance
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
+    return app

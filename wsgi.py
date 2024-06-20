@@ -1,6 +1,9 @@
 import os
 import uvicorn
-from main import main
+import asyncio
+from main import create_app
 
 if __name__ == "__main__":
-    uvicorn.run(main(), host="0.0.0.0", port=int(os.getenv("PORT", default=8443)))
+    loop = asyncio.get_event_loop()
+    app = loop.run_until_complete(create_app())
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", default=8443)))
