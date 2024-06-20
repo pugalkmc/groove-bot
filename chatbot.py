@@ -38,8 +38,6 @@ async def chat_with_memory(update, limit=4):
         ]
         refined_message = gemini_config.model.generate_content(prompt_parts).text
 
-    print(text, refined_message)
-
     message_embed = gemini_config.embed_bulk_chunks([refined_message])[0]
     retrieved_chunks = gemini_config.perform_search_and_get_chunks(chat_id, index, message_embed)
     template = f"""

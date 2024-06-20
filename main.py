@@ -89,6 +89,7 @@ async def bot_setup_command(update, context):
             )
             config.settings[chat_id] = admin_operations.default
             config.settings[chat_id]['register'] = True
+            config.settings[chat_id]['manager'] = str(setup_validation['manager'])
         else:
             await update.message.reply_text(
             text="Invalid register token"
