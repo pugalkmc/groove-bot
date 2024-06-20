@@ -29,7 +29,7 @@ from telegram.ext import (
     TypeHandler
 )
 from telegram.error import BadRequest, NetworkError
-
+from database import project_col
 import admin_operations
 import greeting
 import config
@@ -200,9 +200,15 @@ async def main() -> None:
     asgi_app = WsgiToAsgi(flask_app)
     app.mount("/", asgi_app)
 
+    # Health check endpoint
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
     @app.on_event("startup")
     async def startup():
         await dp.start()
+        logger.info("Application startup complete")
 
     @app.on_event("shutdown")
     async def shutdown():
