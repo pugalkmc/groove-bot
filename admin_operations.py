@@ -124,6 +124,7 @@ async def kick(update: Update, context: CallbackContext):
         logger.error(f"Error kicking user: {e}")
         await update.message.reply_text("Failed to kick the user. Please try again.")
 
+
 @admin_only
 @settings_check
 async def mute(update: Update, context: CallbackContext):
