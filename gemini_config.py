@@ -3,6 +3,9 @@ from langchain_community.document_loaders import WebBaseLoader, PyPDFLoader
 import pinecone
 import google.generativeai as genai
 import config
+from openai import OpenAI
+
+client = OpenAI()
 
 genai.configure(api_key=config.GOOGLE_API_KEY)
 
@@ -133,3 +136,24 @@ def generate_answer(retrieved_chunks, query):
 
     response = model.generate_content(prompt_parts)
     return response.text
+
+def openai_answer(retrieved_chunks, system, chat_history, query):
+    context = "\n\n".join(retrieved_chunks)
+
+    prompt = f"{system}\n\nProject Details: {context}"
+    for chunk in retrieved_chunks:
+        prompt += f"{chunk}\n\n"
+
+    history = [{"role":"system", "content": prompt}]
+    for user, AI in chat_history:
+        history.append({"role": "user", "content": user})
+        history.append({"role": "assistant", "content": AI})
+    
+    history.append({"role": "user", "content": query})
+
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=history
+        )
+    
+    return response.choices[0].message.content

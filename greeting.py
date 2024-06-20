@@ -66,7 +66,6 @@ async def new_member(update: Update, context: CallbackContext):
         adder = update.message.from_user
 
         if new_member.id != adder.id:
-            con
             continue
 
         first_name = new_member.first_name
