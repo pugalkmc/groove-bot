@@ -210,5 +210,5 @@ async def main() -> None:
 
     return app  # Return the FastAPI app instance
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
