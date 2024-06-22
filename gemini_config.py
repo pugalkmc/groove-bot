@@ -5,8 +5,6 @@ import google.generativeai as genai
 import config
 from openai import OpenAI
 
-client = OpenAI()
-
 genai.configure(api_key=config.GOOGLE_API_KEY)
 
 # Set up the model
@@ -36,6 +34,7 @@ safety_settings = [
   },
 ]
 
+client = OpenAI()
 model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest",
                               generation_config=generation_config,
                               safety_settings=safety_settings)
@@ -150,7 +149,7 @@ def openai_answer(retrieved_chunks, system, chat_history, query):
         history.append({"role": "assistant", "content": AI})
     
     history.append({"role": "user", "content": query})
-
+    
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=history
