@@ -16,7 +16,7 @@ profanity.load_censor_words()
 chat_memory = {}
 
 
-async def chat_with_memory(update, limit=4):
+async def chat_with_memory(update, limit=3):
     user_id = update.message.from_user.id
     text = update.message.text
     first_name = update.message.from_user.first_name
@@ -32,11 +32,13 @@ async def chat_with_memory(update, limit=4):
 
     refined_message = text
     if len(chat_memory[user_id]) >= 1:
-        prompt_parts = [
-            f"input: Refine user the query based on the previous chat history between the AI assistant ,user and relevant to project details, also with current user message is must\nAdd as much as details as possible\nprevious chat: {previous_chat}\nNew user message: {text}",
-            "output: Return only the refined query string nothing else",
-        ]
-        refined_message = gemini_config.model.generate_content(prompt_parts).text
+        refined_message = gemini_config.client.chat.completions.create(
+          model="gpt-3.5-turbo",
+          messages=[
+              {"role":"system", "content": f"Refine user the query based on the previous chat history between the AI assistant and user as shorter. It must be refined based on the project details as well\n\nAdd as much as details in the defined query gather them from chat history and user message\nprevious chat: {previous_chat}\nNew user message: {text}\n\nIMPORTANT: Return the refined query string only, no need of any other additional details"},
+          ]
+        ).choices[0].message.content
+        print(text, refined_message)
 
     message_embed = gemini_config.embed_bulk_chunks([refined_message])[0]
     retrieved_chunks = gemini_config.perform_search_and_get_chunks(chat_id, index, message_embed)
@@ -47,13 +49,18 @@ Be concise and conversational, Provide refined answer to make understand the use
 Latest information based on the annoucement time and current time
 provide source links properly if user needs
 Your are internal system, if you face any difficulties to answer with provided details, don't expose with your response
+Try stick with project details only
+never try to embed links
+Provide most up to date information you have and accurate data to the user available from the context
+Analys deeply and answer
+
+Current Date and Time: {datetime.now()}
 
 Never do:
 Avoid phrases like "in this context" or "based on the context provided."
 Keep responses simple and add as much as details as you can based on the response
-Never try to embed the link, make it as normal text is enough
 
-Your Name: Goat AI
+Your Name: Groove AI
 
 User Details: first name: {first_name}, last name: {username}"""
 
@@ -145,26 +152,7 @@ async def message_handler(update, context):
 
     try:
         ai_response = await chat_with_memory(update)
-        await update.message.reply_text(text=ai_response)
+        await update.message.reply_text(text=ai_response, parse_mode="html")
     except Exception as error:
         print(f"Error processing message: {error}")
         await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=f"Error processing message from {first_name}: {error}")
-        asyncio.sleep  # Consider using asyncio.sleep instead of time.sleep
-
-        # Example of retry logic (not recommended to use time.sleep for retries)
-        for _ in range(5):
-            try:
-                ai_response = await chat_with_memory(update)
-                await update.message.reply_text(text=ai_response)
-                break
-            except Exception as error:
-                print(f"Error processing message: {error}")
-                await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=f"Error processing message from {first_name}: {error}")
-                print("Error details:", traceback.format_exc())
-                await asyncio.sleep(5)
-        else:
-            print("Max retries reached, handling error...")
-            await update.message.reply_text(
-                text="Sorry, I encountered an issue and need to take a short break. I'll be back soon."
-            )
-            await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text="Max retries reached for processing message.")

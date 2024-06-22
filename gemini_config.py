@@ -64,7 +64,7 @@ def embed_bulk_chunks(chunks, model_name="models/embedding-001", task_type="retr
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def perform_search_and_get_chunks(chat_id,index, query_vector, top_k=10):
+def perform_search_and_get_chunks(chat_id,index, query_vector, top_k=4):
     try:
         result = index.query(
             vector=query_vector,
