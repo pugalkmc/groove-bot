@@ -1,6 +1,7 @@
 from pymongo import MongoClient
+from config import MONGODB_URL
 
-client = MongoClient('mongodb+srv://pugalkmc:pugalkmc@cluster0.dzcnjxc.mongodb.net/')
+client = MongoClient(MONGODB_URL)
 db = client['aibot']
 project_col = db['projects']
 user_col = db['users']
