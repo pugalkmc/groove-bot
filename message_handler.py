@@ -1,9 +1,5 @@
-import asyncio
-import time
 from collections import deque
 from datetime import datetime, timedelta
-import traceback
-
 import auto_mod
 import config
 import chatbot_functions
@@ -11,9 +7,9 @@ from better_profanity import profanity
 from database import profanity_collection
 from telegram import ChatPermissions
 from pinecone_config import index
+from database import project_col
 from admin_operations import registered_only, settings_check
 profanity.load_censor_words()
-chat_memory = {}
 
 
 async def chat_with_memory(update, limit=3):
@@ -22,65 +18,85 @@ async def chat_with_memory(update, limit=3):
     first_name = update.message.from_user.first_name
     username = update.message.from_user.username
     chat_id = update.message.chat_id
-    if user_id not in chat_memory:
-        chat_memory[user_id] = deque(maxlen=limit)
 
-    previous_chat = ""
-
-    for user, system in chat_memory[user_id]:
-        previous_chat += f"User: {user}\nAI: {system}\n"
+    if user_id not in chatbot_functions.chat_memory:
+        chatbot_functions.chat_memory[user_id] = deque(maxlen=limit)
 
     refined_message = text
-    if len(chat_memory[user_id]) >= 1:
+    if len(chatbot_functions.chat_memory[user_id]) >= 1:
         refined_message = chatbot_functions.client.chat.completions.create(
           model="gpt-4o-mini",
           messages=[
-              {"role":"system", "content": f"Refine the user message based on the previous chat history\nprevious chat: {previous_chat}\nNew user message: {text}\n\nIMPORTANT: Return the refined query string only, no need of any other additional details"},
+              {"role":"system", "content": chatbot_functions.get_refine_prompt(user_id, text)},
           ]
         ).choices[0].message.content
-        print(text, refined_message)
 
     message_embed = chatbot_functions.embed_bulk_chunks([refined_message])[0]
     retrieved_chunks = chatbot_functions.perform_search_and_get_chunks(chat_id, index, message_embed)
-    system = f"""You work as a customer service representative for a firm. Naturally continue the conversation and reply to the user using the details they have given.
-
-Instructions to follow: Be succinct and personable when providing details.
-If the user requests it, the most recent information based on the announcement time and present time should be properly linked to the sources.
-Your system is internal, so don't reveal your answer if you have trouble answering with the information you've provided.
-Try to limit your response to project details and avoid including extraneous material.
-Give the user accurate information based on the context and the most recent information you have.
-If a customer is searching for something from your business, draw them in.
-
-Steer clear of expressions such as "in this context" or "based on the context provided."
-Must Note: Only stick with your company details, never suggest any thing outside or over assume anything to answerback
-
-Current Date and Time: {datetime.now()}
+    system = f"""
+{chatbot_functions.system_prompt}
 
 User Details: first name: {first_name}, last name: {username}"""
 
-    #     template = f"""
-    # {system}
-    # User first name: {first_name}
-    # conversation:
-    # """
+    response = chatbot_functions.openai_answer(retrieved_chunks, system, user_id, text)
+    chatbot_functions.chat_memory[user_id].append((text, response))
 
-    #     template += previous_chat
-    #     template += f"User: {text}\n"
+    return response
 
-    # template = f"{system}\n"
-    # template += f"User first name: {first_name}"
-    # template += previous_chat
+default = {
+    "status": True,
+    "rateLimit": True,
+    "rateLimitThreshold": 10,
+    "rateLimitTimeout": 10,
+    "profanityFilter": True,
+    "welcomeNewUsers": True,
+    "register": False
+}
 
-    # response = gemini_config.generate_answer(retrieved_chunks, template)
-    for chunk in retrieved_chunks:
-        print(chunk)
-    response = chatbot_functions.openai_answer(retrieved_chunks, system, chat_memory[user_id], text)
+async def chat_handler_api(user, text, chat_id, limit=3):
+    # print(config.settings)
+    user_id = user['_id']
+    user_name = user['name']
+    user_email = user['email']
 
-    chat_memory[user_id].append((text, response))
+    if chat_id not in config.settings:
+        get_project = project_col.find_one({'groupId': chat_id})
+        if not get_project:
+            config.settings[chat_id] = default
+        else:
+            config.settings[chat_id] = get_project['controls']
+            config.settings[chat_id]['register'] = True
+            config.settings[chat_id]['manager'] = str(get_project['manager'])
+    # chat_id = str(chat_id)
+    if user_id not in chatbot_functions.chat_memory:
+        chatbot_functions.chat_memory[user_id] = deque(maxlen=limit)
 
-    if len(chat_memory[user_id]) > limit:
-        chat_memory[user_id].popleft()
+    previous_chat = ""
 
+    for user, system in chatbot_functions.chat_memory[user_id]:
+        previous_chat += f"User: {user}\nAI: {system}\n"
+    refined_message = text
+    if len(chatbot_functions.chat_memory[user_id]) >= 1:
+        refined_message = chatbot_functions.client.chat.completions.create(
+          model="gpt-4o-mini",
+          messages=[
+              {"role":"system", "content": chatbot_functions.get_refine_prompt(user_id, text)},
+          ]
+        ).choices[0].message.content
+    
+    system = f"""
+{chatbot_functions.system_prompt}
+
+User Details:
+Name: {user_name}, Email: {user_email}
+"""
+    
+    # print(chat_id, config.settings[chat_id])
+
+    message_embed = chatbot_functions.embed_bulk_chunks([refined_message])[0]
+    retrieved_chunks = chatbot_functions.perform_search_and_get_chunks(chat_id, index, message_embed)
+    response = chatbot_functions.openai_answer(retrieved_chunks, system, user_id, text)
+    chatbot_functions.chat_memory[user_id].append((text, response))
     return response
 
 
@@ -148,7 +164,7 @@ async def message_handler(update, context):
         else:
             await context.bot.send_message(chat_id=chat_id, text=f"Hey @{username}, please avoid offensive language")
 
-        chat_memory.setdefault(user_id, deque(maxlen=config.HISTORY_LIMIT)).append((text, "Please avoid using offensive language."))
+        chatbot_functions.chat_memory.setdefault(user_id, deque(maxlen=config.HISTORY_LIMIT)).append((text, "Please avoid using offensive language."))
         return
 
     if not (is_tagged or is_reply):

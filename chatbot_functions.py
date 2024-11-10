@@ -1,3 +1,5 @@
+from collections import deque
+from datetime import datetime
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader, PyPDFLoader
 import pinecone
@@ -34,10 +36,40 @@ safety_settings = [
   },
 ]
 
+system_prompt = f"""
+You work as a customer service representative for a firm. Naturally continue the conversation and reply to the user using the details they have given.
+
+Instructions to follow: Be succinct and personable when providing details.
+If the user requests it, the most recent information based on the announcement time and present time should be properly linked to the sources.
+Your system is internal, so don't reveal your answer if you have trouble answering with the information you've provided.
+Try to limit your response to project details and avoid including extraneous material.
+Give the user accurate information based on the context and the most recent information you have.
+If a customer is searching for something from your business, draw them in.
+
+Steer clear of expressions such as "in this context" or "based on the context provided."
+Must Note: Only stick with your company details, never suggest any thing outside or over assume anything to answerback
+
+Current Date and Time: {datetime.now()}
+"""
+
 client = OpenAI()
 model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest",
                               generation_config=generation_config,
                               safety_settings=safety_settings)
+
+chat_memory = {}
+
+def get_refine_prompt(user_id, text, limit=3):
+    if user_id not in chat_memory:
+        chat_memory[user_id] = deque(maxlen=limit)
+
+    previous_chat = ""
+
+    for user, system in chat_memory[user_id]:
+        previous_chat += f"User: {user}\nAI: {system}\n"
+    
+    return f"Refine the user message based on the previous chat history\nprevious chat: {previous_chat}\n" \
+            f"New user message: {text}\n\nIMPORTANT: Return the refined query string only, no need of any other additional details"
 
 # Step 2: Extract content from Website using WebLoader
 def extract_text_from_website(url):
@@ -49,7 +81,6 @@ def extract_text_from_website(url):
 def chunk_text(text, chunk_size=600, chunk_overlap=100):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     return text_splitter.split_documents(text)
-
 
 def embed_bulk_chunks(chunks, model_name="models/embedding-001", task_type="retrieval_document"):
     try:
@@ -82,22 +113,6 @@ def perform_search_and_get_chunks(chat_id,index, query_vector, top_k=5):
         return  chunks
     except pinecone.core.client.exceptions.PineconeApiException as e:
         print(f"An error occurred: {e}")
-
-def embedding_gemini(chunks, tag):
-    total_chunks = len(chunks)
-    processed_chunks = 0
-    total_processed_chunks = []
-    for start_index in range(0, total_chunks, 100):
-        chunk_data = chunks[start_index : start_index + 100]
-        embeddings = embed_bulk_chunks(chunk_data)
-        # Process each embedding and metadata
-        for i, embedding in enumerate(embeddings):
-            processed_chunks += 1
-            metadata = {"tag": tag, "source": chunk_data[i]}
-            total_processed_chunks.append((f"{tag}_{processed_chunks}", embedding, metadata))
-        print(f"Processing chunk {processed_chunks}/{total_chunks}")
-    
-    return total_processed_chunks
 
 
 def embed_bulk_chunks(chunks, model_name="models/embedding-001", task_type="retrieval_document"):
@@ -136,7 +151,7 @@ def generate_answer(retrieved_chunks, query):
     response = model.generate_content(prompt_parts)
     return response.text
 
-def openai_answer(retrieved_chunks, system, chat_history, query):
+def openai_answer(retrieved_chunks, system, user_id, query):
     context = "\n\n".join(retrieved_chunks)
 
     prompt = f"{system}\n\nProject Details: {context}"
@@ -144,15 +159,15 @@ def openai_answer(retrieved_chunks, system, chat_history, query):
         prompt += f"{chunk}\n\n"
 
     history = [{"role":"system", "content": prompt}]
-    for user, AI in chat_history:
+    for user, AI in chat_memory[user_id]:
         history.append({"role": "user", "content": user})
         history.append({"role": "assistant", "content": AI})
     
     history.append({"role": "user", "content": query})
     
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o-mini",
         messages=history
-        )
+    )
     
     return response.choices[0].message.content

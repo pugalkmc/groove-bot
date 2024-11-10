@@ -12,7 +12,9 @@ from flask import Flask, jsonify, make_response, request
 from asgiref.wsgi import WsgiToAsgi
 from telegram import Bot, Update
 from telegram.constants import ParseMode
-from message_handler import message_handler
+from message_handler import message_handler, chat_handler_api
+from flask_cors import CORS
+from fastapi.middleware.cors import CORSMiddleware
 from admin_operations import settings_check, admin_only
 from uuid import uuid4
 from telegram.ext import (
@@ -30,7 +32,7 @@ from database import project_col
 import admin_operations
 import greeting
 import config
-from message_handler import chat_memory
+import chatbot_functions
 
 bot = Bot(config.BOT_TOKEN)
 
@@ -129,7 +131,7 @@ async def bot_revoke_command(update, context):
             text="Bot disconnected from the group"
             )
             config.settings[chat_id]['register'] = False
-            chat_memory = {}
+            chatbot_functions.chat_memory = {}
     else:
         await update.message.reply_text(
             text="Please add unregister token next to the command"
@@ -149,34 +151,23 @@ async def error(update, context):
 
     await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=error_message)
 
+
 async def create_app() -> FastAPI:
+    # Initialize bot and dispatcher
     await bot.initialize()
-
-    context_types = ContextTypes(context=CustomContext)
-    dp = (
-        Application.builder().token(config.BOT_TOKEN).updater(None).context_types(context_types).build()
-    )
-
+    dp = Application.builder().token(config.BOT_TOKEN).updater(None).build()
     await dp.initialize()
 
+    # Add your handlers
     dp.add_handler(CommandHandler("kick", admin_operations.kick))
-    dp.add_handler(CommandHandler("mute", admin_operations.mute))
-    dp.add_handler(CommandHandler("unmute", admin_operations.unmute))
-    dp.add_handler(CommandHandler("warn", admin_operations.warn))
-    dp.add_handler(CommandHandler("delete", admin_operations.delete))
-    dp.add_handler(CommandHandler("pin", admin_operations.pin))
-    dp.add_handler(CommandHandler("unpin", admin_operations.unpin))
-    dp.add_handler(CommandHandler("register", bot_setup_command))
-    dp.add_handler(CommandHandler("unregister", bot_revoke_command))
-    dp.add_handler(MessageHandler(filters.TEXT, message_handler))
-    dp.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, greeting.new_member))
-    dp.add_handler(MessageHandler(filters.COMMAND, admin_operations.handle_command_from_non_admin))
-    dp.add_handler(TypeHandler(type=WebhookUpdate, callback=webhook_update))
-    dp.add_error_handler(error)
+    # Add other handlers...
 
+    # Set webhook
     await dp.bot.set_webhook(url=f"{config.URL}/telegram", allowed_updates=Update.ALL_TYPES)
 
+    # Flask application with CORS
     flask_app = Flask(__name__)
+    CORS(flask_app, resources={r"/*": {"origins": "*"}})  # Allow all origins for all routes
 
     @flask_app.post("/telegram")
     async def telegram() -> Response:
@@ -187,9 +178,32 @@ async def create_app() -> FastAPI:
             logger.error(f"Error processing update: {e}")
             logger.error(traceback.format_exc())
         return make_response(jsonify({"status": "ok"}), HTTPStatus.OK)
+    
+    @flask_app.post("/generate")
+    async def flask_chat_handler() -> Response:
+        try:
+            data = request.get_json()
+            user = data.get("user")
+            text = data.get("text")
+            chat_id = data.get("chat_id")
+            response = await chat_handler_api(user, text, chat_id)
+            return make_response(jsonify({"status": "ok", "response": response}), HTTPStatus.OK)
+        except Exception as e:
+            return make_response(jsonify({"status": "failed", "error": str(e)}), HTTPStatus.CONFLICT)
 
+    # FastAPI app configuration
     app = FastAPI()
 
+    # CORS middleware for FastAPI
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Adjust origins as needed
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Mount Flask app onto FastAPI
     asgi_app = WsgiToAsgi(flask_app)
     app.mount("/", asgi_app)
 
