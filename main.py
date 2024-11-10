@@ -30,6 +30,7 @@ from database import project_col
 import admin_operations
 import greeting
 import config
+from message_handler import chat_memory
 
 bot = Bot(config.BOT_TOKEN)
 
@@ -82,18 +83,25 @@ async def bot_setup_command(update, context):
     chat_id = update.message.chat_id
     if context.args:
         setup_validation = project_col.find_one({ 'registerId': context.args[0] })
-        if setup_validation:
-            project_col.update_one({ 'registerId':context.args[0] }, {"$set": { 'groupId': chat_id, 'registerId': str(uuid4())}})
+        if not setup_validation:
             await update.message.reply_text(
-            text="Bot setup completed"
+                text="Invalid register token"
             )
-            config.settings[chat_id] = admin_operations.default
-            config.settings[chat_id]['register'] = True
-            config.settings[chat_id]['manager'] = str(setup_validation['manager'])
-        else:
+            return
+
+        if setup_validation and setup_validation['groupId']:
             await update.message.reply_text(
-            text="Invalid register token"
+                text="Since the bot is already a member of another group, try using the unregister command on the current group to unlink it before attempting to register here."
             )
+            return
+
+        project_col.update_one({ 'registerId':context.args[0] }, {"$set": { 'groupId': chat_id, 'registerId': str(uuid4())}})
+        await update.message.reply_text(
+        text="Bot setup completed"
+        )
+        config.settings[chat_id] = admin_operations.default
+        config.settings[chat_id]['register'] = True
+        config.settings[chat_id]['manager'] = str(setup_validation['manager'])
     else:
         await update.message.reply_text(
             text="Please add register token next to the command"
@@ -105,16 +113,23 @@ async def bot_revoke_command(update, context):
     chat_id = update.message.chat_id
     if context.args:
         setup_validation = project_col.find_one({ 'registerId': context.args[0] })
+        if not setup_validation:
+            await update.message.reply_text(
+                text="Invalid register token"
+            )
+        
+        if setup_validation and not setup_validation['groupId']:
+            await update.message.reply_text(
+                text="You're attempting to unregister, but the bot hasn't registered yet."
+            )
+
         if setup_validation:
             project_col.update_one({ 'registerId':context.args[0] }, {"$set": { 'groupId': None, 'registerId': str(uuid4())}})
             await update.message.reply_text(
             text="Bot disconnected from the group"
             )
             config.settings[chat_id]['register'] = False
-        else:
-            await update.message.reply_text(
-            text="Invalid register token"
-            )
+            chat_memory = {}
     else:
         await update.message.reply_text(
             text="Please add unregister token next to the command"

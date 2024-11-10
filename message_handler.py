@@ -33,7 +33,7 @@ async def chat_with_memory(update, limit=3):
     refined_message = text
     if len(chat_memory[user_id]) >= 1:
         refined_message = chatbot_functions.client.chat.completions.create(
-          model="gpt-3.5-turbo",
+          model="gpt-4o-mini",
           messages=[
               {"role":"system", "content": f"Refine the user message based on the previous chat history\nprevious chat: {previous_chat}\nNew user message: {text}\n\nIMPORTANT: Return the refined query string only, no need of any other additional details"},
           ]
