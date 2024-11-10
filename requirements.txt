@@ -18,3 +18,5 @@ logging==0.4.9.6
 pinecone-client==4.1.1
 openai==1.54.3
 telegram==0.0.1
+gunicorn
+flask-cors==4.0.1
