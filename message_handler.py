@@ -6,7 +6,7 @@ import traceback
 
 import auto_mod
 import config
-import gemini_config
+import chatbot_functions
 from better_profanity import profanity
 from database import profanity_collection
 from telegram import ChatPermissions
@@ -32,35 +32,29 @@ async def chat_with_memory(update, limit=3):
 
     refined_message = text
     if len(chat_memory[user_id]) >= 1:
-        refined_message = gemini_config.client.chat.completions.create(
+        refined_message = chatbot_functions.client.chat.completions.create(
           model="gpt-3.5-turbo",
           messages=[
-              {"role":"system", "content": f"Refine user the query based on the previous chat history between the AI assistant and user as shorter. It must be refined based on the project details as well\n\nAdd as much as details in the defined query gather them from chat history and user message\nprevious chat: {previous_chat}\nNew user message: {text}\n\nIMPORTANT: Return the refined query string only, no need of any other additional details"},
+              {"role":"system", "content": f"Refine the user message based on the previous chat history\nprevious chat: {previous_chat}\nNew user message: {text}\n\nIMPORTANT: Return the refined query string only, no need of any other additional details"},
           ]
         ).choices[0].message.content
         print(text, refined_message)
 
-    message_embed = gemini_config.embed_bulk_chunks([refined_message])[0]
-    retrieved_chunks = gemini_config.perform_search_and_get_chunks(chat_id, index, message_embed)
-    system = f"""You are a helpful and friendly person. Follow up the conversation naturally and respond to the user based on the provided information.
-Try to:
-Help your with provided details details
-Be concise and conversational, Provide refined answer to make understand the user.
-Latest information based on the annoucement time and current time
-provide source links properly if user needs
-Your are internal system, if you face any difficulties to answer with provided details, don't expose with your response
-Try stick with project details only
-never try to embed links
-Provide most up to date information you have and accurate data to the user available from the context
-Analys deeply and answer
+    message_embed = chatbot_functions.embed_bulk_chunks([refined_message])[0]
+    retrieved_chunks = chatbot_functions.perform_search_and_get_chunks(chat_id, index, message_embed)
+    system = f"""You work as a customer service representative for a firm. Naturally continue the conversation and reply to the user using the details they have given.
+
+Instructions to follow: Be succinct and personable when providing details.
+If the user requests it, the most recent information based on the announcement time and present time should be properly linked to the sources.
+Your system is internal, so don't reveal your answer if you have trouble answering with the information you've provided.
+Try to limit your response to project details and avoid including extraneous material.
+Give the user accurate information based on the context and the most recent information you have.
+If a customer is searching for something from your business, draw them in.
+
+Steer clear of expressions such as "in this context" or "based on the context provided."
+Must Note: Only stick with your company details, never suggest any thing outside or over assume anything to answerback
 
 Current Date and Time: {datetime.now()}
-
-Never do:
-Avoid phrases like "in this context" or "based on the context provided."
-Keep responses simple and add as much as details as you can based on the response
-
-Your Name: Groove AI
 
 User Details: first name: {first_name}, last name: {username}"""
 
@@ -78,7 +72,9 @@ User Details: first name: {first_name}, last name: {username}"""
     # template += previous_chat
 
     # response = gemini_config.generate_answer(retrieved_chunks, template)
-    response = gemini_config.openai_answer(retrieved_chunks, system, chat_memory[user_id], text)
+    for chunk in retrieved_chunks:
+        print(chunk)
+    response = chatbot_functions.openai_answer(retrieved_chunks, system, chat_memory[user_id], text)
 
     chat_memory[user_id].append((text, response))
 
@@ -86,6 +82,14 @@ User Details: first name: {first_name}, last name: {username}"""
         chat_memory[user_id].popleft()
 
     return response
+
+
+def escape_markdown_v2(text):
+    special_characters = r'_*[]()~`>#+-=|{}.!'
+    for char in special_characters:
+        text = text.replace(char, f"\\{char}")
+    return text
+
 
 @settings_check
 @registered_only
@@ -152,7 +156,8 @@ async def message_handler(update, context):
 
     try:
         ai_response = await chat_with_memory(update)
-        await update.message.reply_text(text=ai_response, parse_mode="html")
+        markdown_response = escape_markdown_v2(ai_response)
+        await update.message.reply_text(text=markdown_response, parse_mode="MarkdownV2")
     except Exception as error:
         print(f"Error processing message: {error}")
         await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=f"Error processing message from {first_name}: {error}")

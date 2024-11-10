@@ -12,7 +12,7 @@ from flask import Flask, jsonify, make_response, request
 from asgiref.wsgi import WsgiToAsgi
 from telegram import Bot, Update
 from telegram.constants import ParseMode
-from chatbot import message_handler
+from message_handler import message_handler
 from admin_operations import settings_check, admin_only
 from uuid import uuid4
 from telegram.ext import (

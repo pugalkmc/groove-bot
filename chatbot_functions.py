@@ -46,7 +46,7 @@ def extract_text_from_website(url):
     return documents
 
 # Step 3: Chunk the extracted content
-def chunk_text(text, chunk_size=1000, chunk_overlap=100):
+def chunk_text(text, chunk_size=600, chunk_overlap=100):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     return text_splitter.split_documents(text)
 
@@ -64,7 +64,7 @@ def embed_bulk_chunks(chunks, model_name="models/embedding-001", task_type="retr
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def perform_search_and_get_chunks(chat_id,index, query_vector, top_k=4):
+def perform_search_and_get_chunks(chat_id,index, query_vector, top_k=5):
     try:
         result = index.query(
             vector=query_vector,
