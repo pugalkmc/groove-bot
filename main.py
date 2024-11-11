@@ -158,9 +158,20 @@ async def create_app() -> FastAPI:
     dp = Application.builder().token(config.BOT_TOKEN).updater(None).build()
     await dp.initialize()
 
-    # Add your handlers
     dp.add_handler(CommandHandler("kick", admin_operations.kick))
-    # Add other handlers...
+    dp.add_handler(CommandHandler("mute", admin_operations.mute))
+    dp.add_handler(CommandHandler("unmute", admin_operations.unmute))
+    dp.add_handler(CommandHandler("warn", admin_operations.warn))
+    dp.add_handler(CommandHandler("delete", admin_operations.delete))
+    dp.add_handler(CommandHandler("pin", admin_operations.pin))
+    dp.add_handler(CommandHandler("unpin", admin_operations.unpin))
+    dp.add_handler(CommandHandler("register", bot_setup_command))
+    dp.add_handler(CommandHandler("unregister", bot_revoke_command))
+    dp.add_handler(MessageHandler(filters.TEXT, message_handler))
+    dp.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, greeting.new_member))
+    dp.add_handler(MessageHandler(filters.COMMAND, admin_operations.handle_command_from_non_admin))
+    dp.add_handler(TypeHandler(type=WebhookUpdate, callback=webhook_update))
+    dp.add_error_handler(error)
 
     # Set webhook
     await dp.bot.set_webhook(url=f"{config.URL}/telegram", allowed_updates=Update.ALL_TYPES)
